@@ -1,100 +1,118 @@
+"""
+Public Health Center (PHC) Inventory Analytics
+
+Author: Ram
+Description: Data cleaning, SQL aggregation, and risk analysis of medicine supply
+            and stockout delays across regional primary healthcare centers.
+"""
+
 import os
 import sqlite3
 import pandas as pd
 import matplotlib.pyplot as plt
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-DATASET_DIR = os.path.join(BASE_DIR, "dataset")
-CHARTS_DIR = os.path.join(BASE_DIR, "charts")
+DATA_PATH = os.path.join(BASE_DIR, "dataset", "phc_medicine_supply.csv")
+CHART_PATH = os.path.join(BASE_DIR, "charts", "stockout_risk_by_district.png")
 
-os.makedirs(DATASET_DIR, exist_ok=True)
-os.makedirs(CHARTS_DIR, exist_ok=True)
 
-csv_path = os.path.join(DATASET_DIR, "phc_medicine_supply.csv")
+def load_and_prep_data(filepath):
+    df = pd.read_csv(filepath)
 
-if not os.path.exists(csv_path):
-    import generate_data
+    # Clean numeric fields
+    df["Current_Stock_Qty"] = pd.to_numeric(df["Current_Stock_Qty"], errors="coerce")
+    df["Delivery_Delay_Days"] = pd.to_numeric(df["Delivery_Delay_Days"], errors="coerce")
 
-print("==================================================================")
-print("  PROJECT 1: PUBLIC HEALTHCARE MEDICINE SUPPLY & DEMAND ANALYTICS")
-print("==================================================================")
+    # Impute missing stock values using median per medicine
+    med_medians = df.groupby("Medicine_Name")["Current_Stock_Qty"].transform("median")
+    df["Current_Stock_Qty"] = df["Current_Stock_Qty"].fillna(med_medians)
+    df["Delivery_Delay_Days"] = df["Delivery_Delay_Days"].fillna(0)
 
-# 1. Load Raw Dataset
-df = pd.read_csv(csv_path)
-print(f"\n[STEP 1] Loaded raw dataset from {csv_path}: {len(df)} records found.")
+    # Stock satisfaction ratio & risk tag
+    df["Stock_Ratio"] = (df["Current_Stock_Qty"] / df["Required_Monthly_Qty"]).round(2)
 
-# 2. Data Cleaning
-print("\n[STEP 2] Performing Data Cleaning...")
-df['Current_Stock_Qty'] = pd.to_numeric(df['Current_Stock_Qty'], errors='coerce')
-df['Delivery_Delay_Days'] = pd.to_numeric(df['Delivery_Delay_Days'], errors='coerce')
+    def calc_risk(r):
+        if r < 0.25:
+            return "Critical (<25%)"
+        elif r < 0.60:
+            return "Warning (25-60%)"
+        return "Optimal (>60%)"
 
-df['Current_Stock_Qty'] = df['Current_Stock_Qty'].fillna(df.groupby('Medicine_Name')['Current_Stock_Qty'].transform('median'))
-df['Delivery_Delay_Days'] = df['Delivery_Delay_Days'].fillna(0)
+    df["Stockout_Risk"] = df["Stock_Ratio"].apply(calc_risk)
+    return df
 
-df['Stock_Ratio'] = (df['Current_Stock_Qty'] / df['Required_Monthly_Qty']).round(2)
 
-def assign_risk(ratio):
-    if ratio < 0.25:
-        return 'CRITICAL (Under 25%)'
-    elif ratio < 0.60:
-        return 'WARNING (25% - 60%)'
-    else:
-        return 'SAFE (Above 60%)'
+def analyze_with_sql(df):
+    conn = sqlite3.connect(":memory:")
+    df.to_sql("phc_inventory", conn, index=False, if_exists="replace")
 
-df['Stockout_Risk'] = df['Stock_Ratio'].apply(assign_risk)
-print("Data Cleaning Complete. Missing values handled and Risk Levels assigned.")
+    query_district = """
+    SELECT 
+        District, 
+        COUNT(*) AS Total_Centers,
+        SUM(CASE WHEN Stockout_Risk LIKE 'Critical%' THEN 1 ELSE 0 END) AS Critical_Centers,
+        ROUND(AVG(Delivery_Delay_Days), 1) AS Avg_Delay_Days
+    FROM phc_inventory
+    GROUP BY District
+    ORDER BY Critical_Centers DESC;
+    """
 
-# 3. SQL Integration & Analytics
-print("\n[STEP 3] Running SQL Analytics using SQLite Database...")
-conn = sqlite3.connect(":memory:")
-df.to_sql("phc_inventory", conn, index=False, if_exists="replace")
+    query_medicine = """
+    SELECT 
+        Medicine_Name,
+        ROUND(AVG(Stock_Ratio) * 100, 1) AS Stock_Fulfillment_Pct,
+        SUM(CASE WHEN Stockout_Risk LIKE 'Critical%' THEN 1 ELSE 0 END) AS Shortage_Count
+    FROM phc_inventory
+    GROUP BY Medicine_Name
+    ORDER BY Stock_Fulfillment_Pct ASC;
+    """
 
-query_critical = """
-SELECT 
-    District, 
-    COUNT(*) AS Total_Centers,
-    SUM(CASE WHEN Stockout_Risk LIKE 'CRITICAL%' THEN 1 ELSE 0 END) AS Critical_Stockout_Count,
-    ROUND(AVG(Delivery_Delay_Days), 1) AS Avg_Delivery_Delay
-FROM phc_inventory
-GROUP BY District
-ORDER BY Critical_Stockout_Count DESC;
-"""
-df_sql_result = pd.read_sql_query(query_critical, conn)
-print("\n--- SQL Query Result: District-wise Critical Stockout Summary ---")
-print(df_sql_result.to_string(index=False))
+    district_summary = pd.read_sql_query(query_district, conn)
+    medicine_summary = pd.read_sql_query(query_medicine, conn)
+    conn.close()
 
-query_medicines = """
-SELECT 
-    Medicine_Name,
-    ROUND(AVG(Stock_Ratio) * 100, 1) AS Avg_Stock_Satisfaction_Pct,
-    SUM(CASE WHEN Stockout_Risk LIKE 'CRITICAL%' THEN 1 ELSE 0 END) AS Critical_Count
-FROM phc_inventory
-GROUP BY Medicine_Name
-ORDER BY Avg_Stock_Satisfaction_Pct ASC;
-"""
-df_med_result = pd.read_sql_query(query_medicines, conn)
-print("\n--- SQL Query Result: Medicine Supply Deficit ---")
-print(df_med_result.to_string(index=False))
+    return district_summary, medicine_summary
 
-# 4. Data Visualization
-print("\n[STEP 4] Generating Data Visualization Chart...")
-plt.figure(figsize=(9, 5))
-district_risk = pd.crosstab(df['District'], df['Stockout_Risk'])
-district_risk.plot(kind='bar', stacked=True, color=['#e74c3c', '#f39c12', '#2ecc71'], figsize=(9, 5))
 
-plt.title("Public Health Center Stockout Risk Level by District", fontsize=12, fontweight='bold')
-plt.xlabel("District", fontsize=10)
-plt.ylabel("Number of Health Centers", fontsize=10)
-plt.xticks(rotation=15)
-plt.grid(axis='y', linestyle='--', alpha=0.7)
-plt.legend(title="Stockout Risk Level")
-plt.tight_layout()
+def generate_visualization(df, output_path):
+    os.makedirs(os.path.dirname(output_path), exist_ok=True)
 
-chart_path = os.path.join(CHARTS_DIR, "stockout_risk_by_district.png")
-plt.savefig(chart_path, dpi=300)
-plt.close()
-print(f"Chart saved successfully at: {chart_path}")
+    ct = pd.crosstab(df["District"], df["Stockout_Risk"])
+    
+    # Reorder columns logically if present
+    cols = [c for c in ["Critical (<25%)", "Warning (25-60%)", "Optimal (>60%)"] if c in ct.columns]
+    ct = ct[cols]
 
-print("\n==================================================================")
-print("  PROJECT 1 ANALYSIS COMPLETE! Output generated successfully.")
-print("==================================================================")
+    fig, ax = plt.subplots(figsize=(8, 4.5))
+    ct.plot(kind="bar", stacked=True, color=["#d9534f", "#f0ad4e", "#5cb85c"], ax=ax)
+
+    ax.set_title("Health Center Stockout Risk Distribution by District", fontsize=11, fontweight="bold")
+    ax.set_xlabel("District", fontsize=9)
+    ax.set_ylabel("Number of Centers", fontsize=9)
+    plt.xticks(rotation=0)
+    plt.grid(axis="y", linestyle=":", alpha=0.6)
+    plt.tight_layout()
+
+    plt.savefig(output_path, dpi=200)
+    plt.close()
+
+
+def main():
+    if not os.path.exists(DATA_PATH):
+        raise FileNotFoundError(f"Missing dataset at {DATA_PATH}")
+
+    df = load_and_prep_data(DATA_PATH)
+    district_df, medicine_df = analyze_with_sql(df)
+
+    print("--- District Inventory Summary ---")
+    print(district_df.to_string(index=False))
+
+    print("\n--- Medicine Fulfillment Deficit ---")
+    print(medicine_df.to_string(index=False))
+
+    generate_visualization(df, CHART_PATH)
+    print(f"\nSaved risk distribution chart to {CHART_PATH}")
+
+
+if __name__ == "__main__":
+    main()

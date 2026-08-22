@@ -1,43 +1,23 @@
-# Public Healthcare Medicine Supply & Demand Analytics
+# PHC Medicine Inventory Analytics
 
-## 📌 Project Overview
-An end-to-end data analytics project focused on monitoring public healthcare center (PHC) medicine stocks, detecting delivery delays, and identifying high-risk stockout centers across regional districts.
+A Python & SQL data project analyzing medicine stock levels and delivery delays across Primary Healthcare Centers (PHCs).
 
-Designed for **Government & Health Informatics R&D** workflows (aligned with C-DAC Bangalore Knowledge Associate domain areas).
+## Overview
+Regional healthcare centers often face supply chain bottlenecks leading to stockouts of key medicines. This project processes inventory logs from 100 health centers to identify districts with critical stock shortages and evaluate supplier delivery delays.
 
----
+## Data Processing & Workflow
+1. **Cleaning:** Handled missing stock counts by imputing medians by medicine category; converted delivery delay fields into numeric format.
+2. **Feature Engineering:** Calculated a stock fulfillment ratio (`Current_Stock / Required_Monthly`) and categorized risk levels (`Critical`, `Warning`, `Optimal`).
+3. **SQL Analytics:** Queried in-memory SQLite tables to group risk counts and calculate delivery delay averages per district.
+4. **Visualization:** Plotting stacked bar charts of stockout risk levels per district using Matplotlib.
 
-## 🛠️ Tech Stack & Skills
-* **Language:** Python 3.x
-* **Data Processing:** Pandas, NumPy
-* **Database & Querying:** SQL (SQLite / SQLite3 in Python)
-* **Visualization:** Matplotlib, Seaborn
-* **Data Format:** CSV
+## Repository Structure
+* `dataset/phc_medicine_supply.csv`: Raw healthcare center inventory log dataset.
+* `analysis.py`: Main processing script (Pandas + SQLite + Matplotlib).
+* `queries.sql`: Standalone SQL queries used in the analysis.
+* `charts/stockout_risk_by_district.png`: Generated visualization output.
 
----
-
-## 📊 Key Highlights & Analytics Findings
-1. **Data Cleaning:** Replaced missing stock values with median medicine inventories, parsed missing delivery delay entries, and derived `Stock_Ratio`.
-2. **Risk Categorization:** Automatically flagged centers as `CRITICAL (< 25%)`, `WARNING (25-60%)`, or `SAFE (> 60%)`.
-3. **SQL Reporting:** Grouped centers by district and medicine type to prioritize delivery route dispatch.
-
----
-
-## 🚀 How to Run
-
-1. Clone repository:
+## Setup & Running
 ```bash
-git clone <your-repo-link>
-cd project1_healthcare_inventory_analytics
-```
-
-2. Run the automated data generation & analysis pipeline:
-```bash
-python generate_data.py
 python analysis.py
 ```
-
-3. Check output:
-* Dataset saved at: `dataset/phc_medicine_supply.csv`
-* Chart saved at: `charts/stockout_risk_by_district.png`
-* SQL queries available in: `queries.sql`

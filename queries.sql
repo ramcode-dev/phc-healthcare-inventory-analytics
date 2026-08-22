@@ -1,30 +1,28 @@
--- ====================================================================
--- PROJECT 1: PUBLIC HEALTHCARE MEDICINE SUPPLY & DEMAND ANALYTICS
--- SQL QUERIES FOR REPORITNG AND INSIGHTS
--- ====================================================================
+-- PHC Inventory Analytics SQL Queries
+-- Database: SQLite (in-memory analytics)
 
--- 1. Identify Districts with the Highest Critical Stockout Risk
+-- 1. District level risk aggregation and delivery delay breakdown
 SELECT 
     District, 
     COUNT(*) AS Total_Centers,
-    SUM(CASE WHEN Stockout_Risk LIKE 'CRITICAL%' THEN 1 ELSE 0 END) AS Critical_Stockout_Count,
-    ROUND(AVG(Delivery_Delay_Days), 1) AS Avg_Delivery_Delay_Days
+    SUM(CASE WHEN Stockout_Risk LIKE 'Critical%' THEN 1 ELSE 0 END) AS Critical_Centers,
+    ROUND(AVG(Delivery_Delay_Days), 1) AS Avg_Delay_Days
 FROM phc_inventory
 GROUP BY District
-ORDER BY Critical_Stockout_Count DESC;
+ORDER BY Critical_Centers DESC;
 
 
--- 2. Identify Specific Medicines Facing Supply Deficit Across All Centers
+-- 2. Medicine supply fulfillment percentage across all centers
 SELECT 
     Medicine_Name,
-    ROUND(AVG(Stock_Ratio) * 100, 1) AS Avg_Stock_Satisfaction_Pct,
-    SUM(CASE WHEN Stockout_Risk LIKE 'CRITICAL%' THEN 1 ELSE 0 END) AS Critical_Count
+    ROUND(AVG(Stock_Ratio) * 100, 1) AS Stock_Fulfillment_Pct,
+    SUM(CASE WHEN Stockout_Risk LIKE 'Critical%' THEN 1 ELSE 0 END) AS Shortage_Count
 FROM phc_inventory
 GROUP BY Medicine_Name
-ORDER BY Avg_Stock_Satisfaction_Pct ASC;
+ORDER BY Stock_Fulfillment_Pct ASC;
 
 
--- 3. High-Priority Restock Action List (Health Centers requiring urgent supply)
+-- 3. Centers requiring urgent restocking (Critical status + high delivery delay)
 SELECT 
     Center_ID,
     Center_Name,
@@ -34,6 +32,6 @@ SELECT
     Required_Monthly_Qty,
     Delivery_Delay_Days
 FROM phc_inventory
-WHERE Stockout_Risk LIKE 'CRITICAL%'
+WHERE Stockout_Risk LIKE 'Critical%'
   AND Delivery_Delay_Days > 5
 ORDER BY Delivery_Delay_Days DESC;

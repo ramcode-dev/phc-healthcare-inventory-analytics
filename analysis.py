@@ -3,33 +3,34 @@ import sqlite3
 import pandas as pd
 import matplotlib.pyplot as plt
 
-# Ensure output directories exist
-os.makedirs("charts", exist_ok=True)
-os.makedirs("dataset", exist_ok=True)
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+DATASET_DIR = os.path.join(BASE_DIR, "dataset")
+CHARTS_DIR = os.path.join(BASE_DIR, "charts")
 
-# 1. Run data generator if dataset doesn't exist
-if not os.path.exists("dataset/phc_medicine_supply.csv"):
+os.makedirs(DATASET_DIR, exist_ok=True)
+os.makedirs(CHARTS_DIR, exist_ok=True)
+
+csv_path = os.path.join(DATASET_DIR, "phc_medicine_supply.csv")
+
+if not os.path.exists(csv_path):
     import generate_data
 
 print("==================================================================")
 print("  PROJECT 1: PUBLIC HEALTHCARE MEDICINE SUPPLY & DEMAND ANALYTICS")
 print("==================================================================")
 
-# 2. Load Raw Dataset
-df = pd.read_csv("dataset/phc_medicine_supply.csv")
-print(f"\n[STEP 1] Loaded raw dataset: {len(df)} records found.")
+# 1. Load Raw Dataset
+df = pd.read_csv(csv_path)
+print(f"\n[STEP 1] Loaded raw dataset from {csv_path}: {len(df)} records found.")
 
-# 3. Data Cleaning
+# 2. Data Cleaning
 print("\n[STEP 2] Performing Data Cleaning...")
-# Convert numeric columns to numeric, replacing missing strings with NaN
 df['Current_Stock_Qty'] = pd.to_numeric(df['Current_Stock_Qty'], errors='coerce')
 df['Delivery_Delay_Days'] = pd.to_numeric(df['Delivery_Delay_Days'], errors='coerce')
 
-# Fill missing Current_Stock_Qty with median value for that medicine type
 df['Current_Stock_Qty'] = df['Current_Stock_Qty'].fillna(df.groupby('Medicine_Name')['Current_Stock_Qty'].transform('median'))
 df['Delivery_Delay_Days'] = df['Delivery_Delay_Days'].fillna(0)
 
-# Calculate Stock Ratio & Categorize Risk Level
 df['Stock_Ratio'] = (df['Current_Stock_Qty'] / df['Required_Monthly_Qty']).round(2)
 
 def assign_risk(ratio):
@@ -43,12 +44,11 @@ def assign_risk(ratio):
 df['Stockout_Risk'] = df['Stock_Ratio'].apply(assign_risk)
 print("Data Cleaning Complete. Missing values handled and Risk Levels assigned.")
 
-# 4. SQL Integration & Analytics
+# 3. SQL Integration & Analytics
 print("\n[STEP 3] Running SQL Analytics using SQLite Database...")
 conn = sqlite3.connect(":memory:")
 df.to_sql("phc_inventory", conn, index=False, if_exists="replace")
 
-# SQL Query 1: Critical Centers per District
 query_critical = """
 SELECT 
     District, 
@@ -59,12 +59,10 @@ FROM phc_inventory
 GROUP BY District
 ORDER BY Critical_Stockout_Count DESC;
 """
-
 df_sql_result = pd.read_sql_query(query_critical, conn)
 print("\n--- SQL Query Result: District-wise Critical Stockout Summary ---")
 print(df_sql_result.to_string(index=False))
 
-# SQL Query 2: Most Affected Medicines
 query_medicines = """
 SELECT 
     Medicine_Name,
@@ -78,7 +76,7 @@ df_med_result = pd.read_sql_query(query_medicines, conn)
 print("\n--- SQL Query Result: Medicine Supply Deficit ---")
 print(df_med_result.to_string(index=False))
 
-# 5. Data Visualization
+# 4. Data Visualization
 print("\n[STEP 4] Generating Data Visualization Chart...")
 plt.figure(figsize=(9, 5))
 district_risk = pd.crosstab(df['District'], df['Stockout_Risk'])
@@ -92,7 +90,7 @@ plt.grid(axis='y', linestyle='--', alpha=0.7)
 plt.legend(title="Stockout Risk Level")
 plt.tight_layout()
 
-chart_path = "charts/stockout_risk_by_district.png"
+chart_path = os.path.join(CHARTS_DIR, "stockout_risk_by_district.png")
 plt.savefig(chart_path, dpi=300)
 plt.close()
 print(f"Chart saved successfully at: {chart_path}")
